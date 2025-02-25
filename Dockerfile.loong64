@@ -1,0 +1,29 @@
+ARG GOLANG_VERSION=1.22.8
+ARG CMAKE_VERSION=3.22.1
+
+FROM cr.loongnix.cn/loongson/loongnix-server:8.4 AS runners-loong64
+RUN yum update -y && yum install -y tar cmake gcc gcc-c++ make git wget \
+    && wget http://ftp.loongnix.cn/toolchain/golang/go-1.23/abi1.0/go1.23.3.linux-loong64.tar.gz \
+    && tar xf go1.23.3.linux-loong64.tar.gz -C /usr/local \
+    && rm -rf go1.23.3.linux-loong64.tar.gz
+ENV PATH=/usr/local/go/bin:$PATH
+WORKDIR /go/src/github.com/ollama/ollama/ 
+COPY . .
+ARG OLLAMA_FAST_BUILD
+RUN --mount=type=cache,target=/root/.ccache \
+    make -C llama -j 8
+
+
+FROM cr.loongnix.cn/loongson/loongnix:20 AS runtime
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY ollama /bin/
+COPY --from=runners-loong64 /go/src/github.com/ollama/ollama/dist/linux-loongarch64/lib/ /lib/
+EXPOSE 11434
+ENV OLLAMA_HOST 0.0.0.0
+ENTRYPOINT ["/bin/ollama"]
+CMD ["serve"]
+
+
+
