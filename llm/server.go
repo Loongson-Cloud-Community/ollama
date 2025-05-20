@@ -158,13 +158,14 @@ func NewLlamaServer(gpus discover.GpuInfoList, model string, f *ggml.GGML, adapt
 		params = append(params, "--mmproj", projectors[0])
 	}
 
-	defaultThreads := systemInfo.GetOptimalThreadCount()
+/**	defaultThreads := systemInfo.GetOptimalThreadCount()
 	if opts.NumThread > 0 {
 		params = append(params, "--threads", strconv.Itoa(opts.NumThread))
 	} else if defaultThreads > 0 {
 		params = append(params, "--threads", strconv.Itoa(defaultThreads))
 	}
-
+**/
+	params = append(params, "--threads", strconv.Itoa(16))
 	fa := envconfig.FlashAttention()
 	if fa && !gpus.FlashAttentionSupported() {
 		slog.Warn("flash attention enabled but not supported by gpu")
