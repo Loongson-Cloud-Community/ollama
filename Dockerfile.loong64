@@ -1,0 +1,59 @@
+ARG FLAVOR=${TARGETARCH}
+
+ARG ROCMVERSION=6.1.2
+ARG JETPACK5VERSION=r35.4.1
+ARG JETPACK6VERSION=r36.2.0
+ARG CMAKEVERSION=3.31.2
+
+FROM lcr.loongnix.cn/openanolis/anolisos:23.1 AS base
+ARG CMAKEVERSION
+RUN yum update -y && yum install -y tar cmake  gcc gcc-c++ 
+ENV LDFLAGS=-s
+
+FROM base AS cpu
+## amd64 uses gcc which requires devtoolset-11 for AVX extensions while arm64 uses clang
+#RUN if [ "$(uname -m)" = "x86_64" ]; then yum install -y devtoolset-11-gcc devtoolset-11-gcc-c++; fi
+#ENV PATH=/opt/rh/devtoolset-11/root/usr/bin:$PATH
+COPY CMakeLists.txt CMakePresets.json .
+COPY ml/backend/ggml/ggml ml/backend/ggml/ggml
+RUN --mount=type=cache,target=/root/.ccache \
+   cmake --preset 'CPU' \
+        && cmake --build --parallel --preset 'CPU' \
+        && cmake --install build --component CPU --strip 
+
+FROM base AS build
+RUN yum install -y golang libstdc++-static glibc-static
+WORKDIR /go/src/github.com/ollama/ollama
+COPY go.mod go.sum .
+RUN go env -w GOPROXY=https://goproxy.cn,direct
+RUN go mod download
+COPY . .
+##RUN CGO_CFLAGS="-DGGML_CPU_GENERIC" go build  -a -ldflags '-extldflags "-static"'
+ARG GOFLAGS="'-ldflags=-w -s -extldflags \"-static\"'"
+ENV CGO_ENABLED=1
+ARG CGO_CFLAGS="-DGGML_CPU_GENERIC"
+ARG CGO_CXXFLAGS
+ENV CGO_CFLAGS="${CGO_CFLAGS}"
+ENV CGO_CXXFLAGS="${CGO_CXXFLAGS}"
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath -buildmode=pie -o /bin/ollama .
+
+FROM scratch AS archive
+COPY --from=cpu dist/lib/ollama /lib/ollama
+COPY --from=build /bin/ollama /bin/ollama
+
+FROM lcr.loongnix.cn/library/debian:sid
+RUN apt-get update \
+    && apt-get install -y ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=archive /bin /usr/bin
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+COPY --from=archive /lib/ollama /usr/lib/ollama
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV OLLAMA_HOST=0.0.0.0:11434
+EXPOSE 11434
+ENTRYPOINT ["/usr/bin/ollama"]
+CMD ["serve"]

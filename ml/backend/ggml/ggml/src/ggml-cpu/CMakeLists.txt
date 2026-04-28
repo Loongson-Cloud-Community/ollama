@@ -429,7 +429,7 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
         endif()
     elseif (GGML_SYSTEM_ARCH STREQUAL "loongarch64")
         message(STATUS "loongarch64 detected")
-        list(APPEND GGML_CPU_SOURCES ggml-cpu/arch/loongarch/quants.c)
+	#list(APPEND GGML_CPU_SOURCES ggml-cpu/arch/loongarch/quants.c)
 
         list(APPEND ARCH_FLAGS -march=loongarch64)
         if (GGML_LASX)
